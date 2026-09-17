@@ -1,8 +1,12 @@
-"""Train a reconstruction model on healthy CSV data (optional torch dependency)."""
-import argparse, json, numpy as np, pandas as pd
-from sklearn.preprocessing import RobustScaler
-from sklearn.neural_network import MLPRegressor
-import joblib
+import argparse
+import pandas as pd
+from deep_detector import DeepPowerDetector,ModelConfig
+from features import wavelet_features
+
 def main():
- p=argparse.ArgumentParser(); p.add_argument('--csv',required=True); p.add_argument('--out',default='artifacts'); a=p.parse_args(); d=pd.read_csv(a.csv); x=d.select_dtypes('number').interpolate().bfill().ffill(); sc=RobustScaler().fit(x); model=MLPRegressor(hidden_layer_sizes=(128,64,128),max_iter=200,random_state=7,early_stopping=True).fit(sc.transform(x),sc.transform(x)); import os; os.makedirs(a.out,exist_ok=True); joblib.dump({'model':model,'scaler':sc,'columns':x.columns.tolist()},a.out+'/reconstruction.joblib'); json.dump({'features':x.columns.tolist()},open(a.out+'/metadata.json','w'))
-if __name__=='__main__': main()
+ p=argparse.ArgumentParser(description='Train PatchTST-AE or TranAD on healthy power data'); p.add_argument('--csv',required=True); p.add_argument('--model',choices=['patchtst','tranad'],default='patchtst'); p.add_argument('--out',default='artifacts/model'); p.add_argument('--window',type=int,default=64); p.add_argument('--epochs',type=int,default=10); p.add_argument('--wavelet',action='store_true'); a=p.parse_args()
+ frame=pd.read_csv(a.csv).select_dtypes(include='number')
+ if a.wavelet: frame=wavelet_features(frame)
+ DeepPowerDetector(ModelConfig(name=a.model,window=a.window)).fit(frame,epochs=a.epochs).save(a.out)
+ print(f'saved {a.model} to {a.out}')
+if __name__=='__main__':main()
