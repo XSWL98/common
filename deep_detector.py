@@ -46,6 +46,9 @@ class DeepPowerDetector:
     def fit(self, frame, epochs=10, batch_size=32, lr=1e-3):
         x = frame.select_dtypes(include=np.number).interpolate(limit_direction="both")
         if x.empty: raise ValueError("训练数据没有数值测点")
+        empty = [c for c in x.columns if x[c].isna().all()]
+        if empty: raise ValueError(f"以下测点全为缺失值，无法训练：{empty[:5]}")
+        if len(x) < self.config.window: raise ValueError(f"训练数据至少需要 {self.config.window} 条记录，当前仅 {len(x)} 条")
         self.columns = x.columns.tolist(); self.scaler = RobustScaler().fit(x)
         windows = make_windows(self.scaler.transform(x).astype("float32"), self.config.window)
         self.model = build_model(self.config.name, len(self.columns), **self._model_kwargs()).to(self.device)
@@ -74,6 +77,7 @@ class DeepPowerDetector:
 
     def predict(self, frame):
         if self.model is None: raise RuntimeError("模型尚未训练或加载")
+        if len(frame) < self.config.window: raise ValueError(f"预测数据至少需要 {self.config.window} 条记录，当前仅 {len(frame)} 条")
         missing=[c for c in self.columns if c not in frame];
         if missing: raise ValueError(f"缺少训练特征: {missing}")
         values=self.scaler.transform(frame[self.columns].interpolate(limit_direction="both")).astype("float32")

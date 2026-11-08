@@ -17,20 +17,26 @@ with st.sidebar:
 df=demo()
 if up:
  raw=pd.read_csv(up); tc=next((c for c in raw.columns if c.lower() in ['timestamp','time','datetime','date']),raw.columns[0]); raw[tc]=pd.to_datetime(raw[tc],errors='coerce'); raw=raw.rename(columns={tc:'timestamp'}).dropna(subset=['timestamp']); nc=raw.select_dtypes(include=np.number).columns.tolist(); df=raw[['timestamp']+nc] if nc else df
+label_cols=[c for c in df.columns if str(c).lower() in ('label','target','y','is_anomaly','anomaly')]
+if label_cols: df=df.drop(columns=label_cols)
 cols=df.select_dtypes(include=np.number).columns.tolist()
+if not cols: st.error('没有可用的数值测点列，请检查 CSV 内容'); st.stop()
 if model_name=='鲁棒统计基线': out=detect(df,cols,w,z,s); out['alert']=out.is_anomaly; out['status']=out.severity
 else:
  model_key='patchtst' if model_name=='PatchTST-AE' else 'tranad'; model_path=Path('artifacts')/model_key
  model_input=wavelet_features(df[cols]) if use_wavelet else df[cols]
  if train_now:
   config=ModelConfig(name=model_key,window=64,patch_len=8,d_model=32,nhead=4,layers=1)
-  with st.spinner(f'正在训练 {model_name}...'):
-   DeepPowerDetector(config).fit(model_input,epochs=3,batch_size=32).save(model_path)
-  st.success(f'{model_name} 训练完成，动态阈值已校准。')
+  try:
+   with st.spinner(f'正在训练 {model_name}...'):
+    DeepPowerDetector(config).fit(model_input,epochs=3,batch_size=32).save(model_path)
+   st.success(f'{model_name} 训练完成，动态阈值已校准。')
+  except Exception as error:
+   st.error(f'训练失败：{error}（至少需要 64 条连续记录，且测点列不能全为空）')
  if model_path.exists():
   detector=DeepPowerDetector.load(model_path)
   try: pred=detector.predict(model_input)
-  except ValueError as error: st.error(f'当前数据与模型特征不一致：{error}。请重新训练。'); st.stop()
+  except (ValueError,RuntimeError) as error: st.error(f'当前数据与模型特征不一致：{error}。请重新训练。'); st.stop()
   out=df.copy(); out[['anomaly_score','is_anomaly','severity','drivers']]=pred[['anomaly_score','is_anomaly','severity','drivers']]; out['change_pct']=df[cols].pct_change().abs().max(axis=1).fillna(0)*100; out['alert']=out.is_anomaly; out['status']=out.severity
  else:
   st.warning(f'{model_name} 尚未训练，当前使用鲁棒统计基线。运行 train.py 生成 {model_path}。'); out=detect(df,cols,w,z,s); out['alert']=out.is_anomaly; out['status']=out.severity
